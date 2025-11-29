@@ -22,14 +22,20 @@ print("Path to dataset files:", DATASET_PATH)
 BATCH_SIZE = 32
 IMG_SIZE = (96, 96)
 
-# Load dataset from local directory
+# Load dataset from local directory, ignoring the 'test' folder
+# We'll use only 'smile' and 'non_smile' subfolders for training/validation
+
+# List only 'smile' and 'non_smile' directories
+allowed_classes = ['smile', 'non_smile']
+
 train_val_dataset = keras.utils.image_dataset_from_directory(
     DATASET_PATH,
     labels='inferred',
     label_mode='binary',
     shuffle=True,
     batch_size=BATCH_SIZE,
-    image_size=IMG_SIZE
+    image_size=IMG_SIZE,
+    class_names=allowed_classes
 )
 
 # Split dataset into train and validation sets
@@ -42,17 +48,17 @@ train_dataset = train_val_dataset.take(train_size)
 val_dataset = train_val_dataset.skip(train_size)
 
 # Visualize data samples
-class_names = train_val_dataset.class_names
-print("Class names:", class_names)
-plt.figure(figsize=(10, 10))
-for images, labels in train_val_dataset.take(1):
-    for i in range(9):
-        ax = plt.subplot(3, 3, i + 1)
-        idx = int(labels[i].numpy()[0]) if labels.shape[-1] == 1 else int(labels[i].numpy())
-        plt.imshow(images[i].numpy().astype("uint8"))
-        plt.title(class_names[idx])
-        plt.axis("off")
-plt.show()
+# class_names = train_val_dataset.class_names
+# print("Class names:", class_names)
+# plt.figure(figsize=(10, 10))
+# for images, labels in train_val_dataset.take(1):
+#     for i in range(9):
+#         ax = plt.subplot(3, 3, i + 1)
+#         idx = int(labels[i].numpy()[0]) if labels.shape[-1] == 1 else int(labels[i].numpy())
+#         plt.imshow(images[i].numpy().astype("uint8"))
+#         plt.title(class_names[idx])
+#         plt.axis("off")
+# plt.show()
 
 # Model creation
 IMG_SHAPE = IMG_SIZE + (3,)
@@ -95,7 +101,7 @@ model.compile(
 model.summary()
 
 # Training and evaluation
-EPOCHS = 5
+EPOCHS = 10
 history = model.fit(
     train_dataset,
     epochs=EPOCHS,
@@ -104,19 +110,94 @@ history = model.fit(
 )
 
 # Plot training and validation loss
-loss = history.history['loss']
-val_loss = history.history['val_loss']
-plt.figure()
-plt.plot(loss, label='Training Loss')
-plt.plot(val_loss, label='Validation Loss')
-plt.legend(loc='upper right')
-plt.ylabel('Cross Entropy')
-plt.ylim([0,1.0])
-plt.title('Training and Validation Loss')
-plt.xlabel('epoch')
-plt.show()
+# loss = history.history['loss']
+# val_loss = history.history['val_loss']
+# plt.figure()
+# plt.plot(loss, label='Training Loss')
+# plt.plot(val_loss, label='Validation Loss')
+# plt.legend(loc='upper right')
+# plt.ylabel('Cross Entropy')
+# plt.ylim([0,1.0])
+# plt.title('Training and Validation Loss')
+# plt.xlabel('epoch')
+# plt.show()
 
 # Evaluate the model
+loss, accuracy = model.evaluate(val_dataset)
+print('Test accuracy :', accuracy)
+
+# Visualize predictions on validation set
+image_batch, label_batch = next(iter(val_dataset))
+predictions = model.predict_on_batch(image_batch).flatten()
+predictions = tf.nn.sigmoid(predictions)
+predictions = tf.where(predictions < 0.5, 0, 1)
+
+print('Predictions:\n', predictions.numpy())
+print('Labels:\n', label_batch.numpy().reshape(-1).astype("uint8"))
+
+# Define class_names for plotting
+class_names = allowed_classes
+
+plt.figure(figsize=(10, 18))
+for i in range(min(18, len(image_batch))):
+    ax = plt.subplot(6, 3, i + 1)
+    plt.imshow(image_batch[i].numpy().astype("uint8"))
+    plt.title(class_names[int(predictions[i])])
+    plt.axis("off")
+plt.show()
+
+# Freeze all layers in the current model
+for layer in model.layers:
+    layer.trainable = False
+
+# Add a new trainable classification head for transfer learning
+new_head = tf.keras.Sequential([
+    tf.keras.layers.Dense(64, activation='relu'),
+    tf.keras.layers.Dropout(0.3),
+    tf.keras.layers.Dense(1)
+])
+
+# Attach the new head to the frozen model
+inputs = model.input
+x = model.output
+x = new_head(x)
+transfer_model = tf.keras.Model(inputs, x)
+
+# Compile the new model
+transfer_model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    metrics=['accuracy']
+)
+
+# Now you can train transfer_model on your own imported data
+DATASET_PATH = "./data"
+train_val_dataset = keras.utils.image_dataset_from_directory(
+    DATASET_PATH,
+    labels='inferred',
+    label_mode='binary',
+    shuffle=True,
+    batch_size=1,
+    image_size=IMG_SIZE
+)
+
+dataset_size = len(train_val_dataset)
+train_size = int(0.8 * dataset_size)
+val_size = dataset_size - train_size
+print("Train size:", train_size)
+print("Validation size:", val_size)
+print("Dataset size:", dataset_size)
+train_dataset = train_val_dataset.take(train_size)
+val_dataset = train_val_dataset.skip(train_size)
+
+EPOCHS = 10
+history = model.fit(
+    train_dataset,
+    epochs=EPOCHS,
+    validation_data=val_dataset,
+    callbacks=[tf.keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True)]
+)
+
 loss, accuracy = model.evaluate(val_dataset)
 print('Test accuracy :', accuracy)
 
@@ -136,19 +217,3 @@ for i in range(min(18, len(image_batch))):
     plt.title(class_names[int(predictions[i])])
     plt.axis("off")
 plt.show()
-
-# Predict on your own images (place images in a folder, e.g., './predict_images')
-from tensorflow.keras.utils import load_img, img_to_array
-PREDICT_FOLDER = "./predict_images"  # <-- CHANGE THIS to your folder with images to predict
-if os.path.isdir(PREDICT_FOLDER):
-    for fn in os.listdir(PREDICT_FOLDER):
-        if fn.lower().endswith(('.png', '.jpg', '.jpeg')):
-            path = os.path.join(PREDICT_FOLDER, fn)
-            img = load_img(path, target_size=(96, 96))
-            x = img_to_array(img)
-            x = np.expand_dims(x, axis=0)
-            x = preprocess_input(x)
-            classes = model.predict(x)
-            print(f"{fn}: {classes[0][0]:.3f} -> {'not a smile' if classes[0][0]>0.5 else 'smile'}")
-else:
-    print(f"Prediction folder '{PREDICT_FOLDER}' not found. Skipping custom image prediction.")
