@@ -2,13 +2,13 @@
 Smiling or Not Classifier
 """
 
-import os
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import numpy as np
 from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.models import Sequential
+from keras import layers
+from keras.models import Sequential
+from keras.preprocessing.image import ImageDataGenerator
 import kagglehub
 
 # Download latest version
@@ -47,22 +47,9 @@ val_size = dataset_size - train_size
 train_dataset = train_val_dataset.take(train_size)
 val_dataset = train_val_dataset.skip(train_size)
 
-# Visualize data samples
-# class_names = train_val_dataset.class_names
-# print("Class names:", class_names)
-# plt.figure(figsize=(10, 10))
-# for images, labels in train_val_dataset.take(1):
-#     for i in range(9):
-#         ax = plt.subplot(3, 3, i + 1)
-#         idx = int(labels[i].numpy()[0]) if labels.shape[-1] == 1 else int(labels[i].numpy())
-#         plt.imshow(images[i].numpy().astype("uint8"))
-#         plt.title(class_names[idx])
-#         plt.axis("off")
-# plt.show()
-
 # Model creation
 IMG_SHAPE = IMG_SIZE + (3,)
-base_model = tf.keras.applications.MobileNetV2(
+base_model = keras.applications.MobileNetV2(
     input_shape=IMG_SHAPE,
     include_top=False,
     weights='imagenet',
@@ -73,28 +60,28 @@ base_model = tf.keras.applications.MobileNetV2(
 base_model.trainable = False
 
 # Preprocessing
-preprocess_input = tf.keras.applications.mobilenet_v2.preprocess_input
+preprocess_input = keras.applications.mobilenet_v2.preprocess_input
 
 # Classification head
-classification_input_layer = tf.keras.layers.Flatten()
-prediction_layer = tf.keras.layers.Dense(1)
+classification_input_layer = keras.layers.Flatten()
+prediction_layer = keras.layers.Dense(1)
 
 def build_model():
-    inputs = tf.keras.Input(shape=(96, 96, 3))
+    inputs = keras.Input(shape=(96, 96, 3))
     x = preprocess_input(inputs)
     x = base_model(x, training=False)
     x = classification_input_layer(x)
-    x = tf.keras.layers.Dropout(0.2)(x)
+    x = keras.layers.Dropout(0.2)(x)
     outputs = prediction_layer(x)
-    model = tf.keras.Model(inputs, outputs)
+    model = keras.Model(inputs, outputs)
     return model
 
 model = build_model()
 
 base_learning_rate = 0.0001
 model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=base_learning_rate),
-    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    optimizer=keras.optimizers.Adam(learning_rate=base_learning_rate),
+    loss=keras.losses.BinaryCrossentropy(from_logits=True),
     metrics=['accuracy']
 )
 
@@ -106,21 +93,8 @@ history = model.fit(
     train_dataset,
     epochs=EPOCHS,
     validation_data=val_dataset,
-    callbacks=[tf.keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True)]
+    callbacks=[keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True)]
 )
-
-# Plot training and validation loss
-# loss = history.history['loss']
-# val_loss = history.history['val_loss']
-# plt.figure()
-# plt.plot(loss, label='Training Loss')
-# plt.plot(val_loss, label='Validation Loss')
-# plt.legend(loc='upper right')
-# plt.ylabel('Cross Entropy')
-# plt.ylim([0,1.0])
-# plt.title('Training and Validation Loss')
-# plt.xlabel('epoch')
-# plt.show()
 
 # Evaluate the model
 loss, accuracy = model.evaluate(val_dataset)
@@ -151,22 +125,22 @@ for layer in model.layers:
     layer.trainable = False
 
 # Add a new trainable classification head for transfer learning
-new_head = tf.keras.Sequential([
-    tf.keras.layers.Dense(64, activation='relu'),
-    tf.keras.layers.Dropout(0.3),
-    tf.keras.layers.Dense(1)
+new_head = keras.Sequential([
+    keras.layers.Dense(64, activation='relu'),
+    keras.layers.Dropout(0.3),
+    keras.layers.Dense(1)
 ])
 
 # Attach the new head to the frozen model
 inputs = model.input
 x = model.output
 x = new_head(x)
-transfer_model = tf.keras.Model(inputs, x)
+transfer_model = keras.Model(inputs, x)
 
 # Compile the new model
 transfer_model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
-    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    optimizer=keras.optimizers.Adam(learning_rate=1e-4),
+    loss=keras.losses.BinaryCrossentropy(from_logits=True),
     metrics=['accuracy']
 )
 
@@ -189,6 +163,38 @@ print("Validation size:", val_size)
 print("Dataset size:", dataset_size)
 train_dataset = train_val_dataset.take(train_size)
 val_dataset = train_val_dataset.skip(train_size)
+
+'''
+
+train_datagen = ImageDataGenerator(
+      rescale=1./255,
+      rotation_range=40,
+      width_shift_range=0.2,
+      height_shift_range=0.2,
+      shear_range=0.2,
+      zoom_range=0.2,
+      horizontal_flip=True,
+      fill_mode='nearest'
+      )
+
+# Flow training images in batches of 128 using train_datagen generator
+train_generator = train_datagen.flow_from_directory(
+        '/content/train-horse-or-human/',  # This is the source directory for training images
+        target_size=(96,96),  # All images will be resized to 100x100
+        batch_size=128,
+        # Since we use binary_crossentropy loss, we need binary labels
+        class_mode='binary')
+
+
+# VALIDATION
+validation_datagen = ImageDataGenerator(rescale=1./255)
+
+validation_generator = validation_datagen.flow_from_directory(
+        '/content/validation-horse-or-human',
+        target_size=IMAGE_SIZE,
+        class_mode='binary')
+'''
+
 
 EPOCHS = 10
 history = model.fit(
