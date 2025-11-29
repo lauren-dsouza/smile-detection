@@ -20,7 +20,7 @@ print("Path to dataset files:", DATASET_PATH)
 # DATASET_PATH = "./data/smiling-or-not"
 
 BATCH_SIZE = 32
-IMG_SIZE = (96, 96)
+IMG_SIZE = (128, 96)
 
 # Load dataset from local directory, ignoring the 'test' folder
 # We'll use only 'smile' and 'non_smile' subfolders for training/validation
@@ -35,6 +35,7 @@ train_val_dataset = keras.utils.image_dataset_from_directory(
     shuffle=True,
     batch_size=BATCH_SIZE,
     image_size=IMG_SIZE,
+    pad_to_aspect_ratio=True,
     class_names=allowed_classes
 )
 
@@ -67,7 +68,7 @@ classification_input_layer = keras.layers.Flatten()
 prediction_layer = keras.layers.Dense(1)
 
 def build_model():
-    inputs = keras.Input(shape=(96, 96, 3))
+    inputs = keras.Input(shape=IMG_SHAPE)
     x = preprocess_input(inputs)
     x = base_model(x, training=False)
     x = classification_input_layer(x)
@@ -153,6 +154,7 @@ train_val_dataset = keras.utils.image_dataset_from_directory(
     shuffle=True,
     batch_size=2,
     image_size=IMG_SIZE,
+    crop_to_aspect_ratio=True,
     class_names=allowed_classes
 )
 
@@ -213,9 +215,10 @@ test_dataset = keras.utils.image_dataset_from_directory(
     TEST_DATASET_PATH,
     labels='inferred',
     label_mode='binary',
-    shuffle=False,
-    batch_size=2,
+    shuffle=True,
+    batch_size=17,
     image_size=IMG_SIZE,
+    crop_to_aspect_ratio=True,
     class_names=allowed_classes
 )
 
