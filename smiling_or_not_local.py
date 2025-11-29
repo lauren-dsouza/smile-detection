@@ -40,7 +40,6 @@ train_val_dataset = keras.utils.image_dataset_from_directory(
 )
 
 # Split dataset into train and validation sets
-
 dataset_size = len(train_val_dataset)
 train_size = int(0.8 * dataset_size)
 val_size = dataset_size - train_size
@@ -125,11 +124,13 @@ print('Test accuracy :', accuracy)
 for layer in model.layers:
     layer.trainable = False
 
+# ------------------------------
 # Add a new trainable classification head for transfer learning
+# ------------------------------
 new_head = keras.Sequential([
     keras.layers.Dense(64, activation='relu'),
     keras.layers.Dropout(0.3),
-    keras.layers.Dense(1)
+    keras.layers.Dense(1, activation='sigmoid')  # <-- added sigmoid activation
 ])
 
 # Attach the new head to the frozen model
@@ -141,7 +142,7 @@ transfer_model = keras.Model(inputs, x)
 # Compile the new model
 transfer_model.compile(
     optimizer=keras.optimizers.Adam(learning_rate=1e-4),
-    loss=keras.losses.BinaryCrossentropy(from_logits=True),
+    loss=keras.losses.BinaryCrossentropy(from_logits=False),  # <-- set from_logits=False
     metrics=['accuracy']
 )
 
@@ -167,40 +168,18 @@ print("Dataset size:", dataset_size)
 train_dataset = train_val_dataset.take(train_size)
 val_dataset = train_val_dataset.skip(train_size)
 
-'''
+# ------------------------------
+# Prefetch datasets for better performance
+# ------------------------------
+AUTOTUNE = tf.data.AUTOTUNE
+train_dataset = train_dataset.cache().prefetch(buffer_size=AUTOTUNE)
+val_dataset = val_dataset.cache().prefetch(buffer_size=AUTOTUNE)
 
-train_datagen = ImageDataGenerator(
-      rescale=1./255,
-      rotation_range=40,
-      width_shift_range=0.2,
-      height_shift_range=0.2,
-      shear_range=0.2,
-      zoom_range=0.2,
-      horizontal_flip=True,
-      fill_mode='nearest'
-      )
-
-# Flow training images in batches of 128 using train_datagen generator
-train_generator = train_datagen.flow_from_directory(
-        '/content/train-horse-or-human/',  # This is the source directory for training images
-        target_size=(96,96),  # All images will be resized to 100x100
-        batch_size=128,
-        # Since we use binary_crossentropy loss, we need binary labels
-        class_mode='binary')
-
-
-# VALIDATION
-validation_datagen = ImageDataGenerator(rescale=1./255)
-
-validation_generator = validation_datagen.flow_from_directory(
-        '/content/validation-horse-or-human',
-        target_size=IMAGE_SIZE,
-        class_mode='binary')
-'''
-
-
-EPOCHS = 5
-history = model.fit(
+# ------------------------------
+# Train the transfer model
+# ------------------------------
+EPOCHS = 10
+history = transfer_model.fit(
     train_dataset,
     epochs=EPOCHS,
     validation_data=val_dataset,
@@ -222,14 +201,16 @@ test_dataset = keras.utils.image_dataset_from_directory(
     class_names=allowed_classes
 )
 
+# Prefetch test dataset
+test_dataset = test_dataset.cache().prefetch(buffer_size=AUTOTUNE)
+
 # Evaluate the model on the test set
-test_loss, test_accuracy = model.evaluate(test_dataset)
+test_loss, test_accuracy = transfer_model.evaluate(test_dataset)
 print('Test accuracy on new data:', test_accuracy)
 
-# Visualize predictions on validation set
+# Visualize predictions on test set
 image_batch, label_batch = next(iter(test_dataset))
-predictions = model.predict_on_batch(image_batch).flatten()
-predictions = tf.nn.sigmoid(predictions)
+predictions = transfer_model.predict_on_batch(image_batch).flatten()
 predictions = tf.where(predictions < 0.5, 0, 1)
 
 print('Predictions:\n', predictions.numpy())
