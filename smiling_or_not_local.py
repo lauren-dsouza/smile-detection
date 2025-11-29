@@ -8,7 +8,7 @@ import numpy as np
 from tensorflow import keras
 from keras import layers
 from keras.models import Sequential
-from keras.preprocessing.image import ImageDataGenerator
+#from keras.preprocessing.image import ImageDataGenerator
 import kagglehub
 
 # Download latest version
@@ -26,7 +26,7 @@ IMG_SIZE = (96, 96)
 # We'll use only 'smile' and 'non_smile' subfolders for training/validation
 
 # List only 'smile' and 'non_smile' directories
-allowed_classes = ['smile', 'non_smile']
+allowed_classes = ['non_smile', 'smile']
 
 train_val_dataset = keras.utils.image_dataset_from_directory(
     DATASET_PATH,
@@ -88,7 +88,7 @@ model.compile(
 model.summary()
 
 # Training and evaluation
-EPOCHS = 10
+EPOCHS = 15
 history = model.fit(
     train_dataset,
     epochs=EPOCHS,
@@ -100,25 +100,25 @@ history = model.fit(
 loss, accuracy = model.evaluate(val_dataset)
 print('Test accuracy :', accuracy)
 
-# Visualize predictions on validation set
-image_batch, label_batch = next(iter(val_dataset))
-predictions = model.predict_on_batch(image_batch).flatten()
-predictions = tf.nn.sigmoid(predictions)
-predictions = tf.where(predictions < 0.5, 0, 1)
+# # Visualize predictions on validation set
+# image_batch, label_batch = next(iter(val_dataset))
+# predictions = model.predict_on_batch(image_batch).flatten()
+# predictions = tf.nn.sigmoid(predictions)
+# predictions = tf.where(predictions < 0.5, 0, 1)
 
-print('Predictions:\n', predictions.numpy())
-print('Labels:\n', label_batch.numpy().reshape(-1).astype("uint8"))
+# print('Predictions:\n', predictions.numpy())
+# print('Labels:\n', label_batch.numpy().reshape(-1).astype("uint8"))
 
-# Define class_names for plotting
-class_names = allowed_classes
+# # Define class_names for plotting
+# class_names = allowed_classes
 
-plt.figure(figsize=(10, 18))
-for i in range(min(18, len(image_batch))):
-    ax = plt.subplot(6, 3, i + 1)
-    plt.imshow(image_batch[i].numpy().astype("uint8"))
-    plt.title(class_names[int(predictions[i])])
-    plt.axis("off")
-plt.show()
+# plt.figure(figsize=(10, 18))
+# for i in range(min(18, len(image_batch))):
+#     ax = plt.subplot(6, 3, i + 1)
+#     plt.imshow(image_batch[i].numpy().astype("uint8"))
+#     plt.title(class_names[int(predictions[i])])
+#     plt.axis("off")
+# plt.show()
 
 # Freeze all layers in the current model
 for layer in model.layers:
@@ -151,8 +151,9 @@ train_val_dataset = keras.utils.image_dataset_from_directory(
     labels='inferred',
     label_mode='binary',
     shuffle=True,
-    batch_size=1,
-    image_size=IMG_SIZE
+    batch_size=2,
+    image_size=IMG_SIZE,
+    class_names=allowed_classes
 )
 
 dataset_size = len(train_val_dataset)
@@ -196,7 +197,7 @@ validation_generator = validation_datagen.flow_from_directory(
 '''
 
 
-EPOCHS = 10
+EPOCHS = 5
 history = model.fit(
     train_dataset,
     epochs=EPOCHS,
@@ -204,11 +205,26 @@ history = model.fit(
     callbacks=[tf.keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True)]
 )
 
-loss, accuracy = model.evaluate(val_dataset)
-print('Test accuracy :', accuracy)
+# Path to your new test data
+TEST_DATASET_PATH = "./data/test"
+
+# Load test dataset
+test_dataset = keras.utils.image_dataset_from_directory(
+    TEST_DATASET_PATH,
+    labels='inferred',
+    label_mode='binary',
+    shuffle=False,
+    batch_size=2,
+    image_size=IMG_SIZE,
+    class_names=allowed_classes
+)
+
+# Evaluate the model on the test set
+test_loss, test_accuracy = model.evaluate(test_dataset)
+print('Test accuracy on new data:', test_accuracy)
 
 # Visualize predictions on validation set
-image_batch, label_batch = next(iter(val_dataset))
+image_batch, label_batch = next(iter(test_dataset))
 predictions = model.predict_on_batch(image_batch).flatten()
 predictions = tf.nn.sigmoid(predictions)
 predictions = tf.where(predictions < 0.5, 0, 1)
@@ -220,6 +236,6 @@ plt.figure(figsize=(10, 18))
 for i in range(min(18, len(image_batch))):
     ax = plt.subplot(6, 3, i + 1)
     plt.imshow(image_batch[i].numpy().astype("uint8"))
-    plt.title(class_names[int(predictions[i])])
+    plt.title(allowed_classes[int(predictions[i])])
     plt.axis("off")
 plt.show()
